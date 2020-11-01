@@ -13,11 +13,13 @@ passport.use(
     const user = getUserBy("username", username);
 
     const failureMessage = "Incorrect username or password.";
+    // @ts-ignore
     if (!user) {
       return done(null, false, { message: failureMessage });
     }
 
     // validate password
+    // @ts-ignore
     if (!bcrypt.compareSync(password, user.password)) {
       return done(null, false, { message: failureMessage });
     }

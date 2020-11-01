@@ -49,7 +49,7 @@ import {
   NotificationResponseItem,
   TransactionQueryPayload,
   DefaultPrivacyLevel,
-  Event
+  Event,
 } from "../../client/src/models";
 import Fuse from "fuse.js";
 import {
@@ -70,7 +70,6 @@ import {
 } from "../../client/src/utils/transactionUtils";
 import { DbSchema } from "../../client/src/models/db-schema";
 
-
 export type TDatabase = {
   users: User[];
   contacts: Contact[];
@@ -82,7 +81,13 @@ export type TDatabase = {
   banktransfers: BankTransfer[];
   events: Event[];
 };
-
+export interface Filter {
+  sorting: string;
+  type?: string;
+  browser?: string;
+  search?: string;
+  offset?: number;
+}
 const USER_TABLE = "users";
 const CONTACT_TABLE = "contacts";
 const BANK_ACCOUNT_TABLE = "bankaccounts";
@@ -126,12 +131,13 @@ export const getAllBy = (entity: keyof DbSchema, key: string, value: any) => {
 };
 
 export const getBy = (entity: keyof DbSchema, key: string, value: any) => {
+  // @ts-ignore
   const result = db
     .get(entity)
     // @ts-ignore
-    .find({ [`${key}`]: value })
+    .find({ key: value })
     .value();
-
+  console.log("result", result);
   return result;
 };
 
@@ -140,11 +146,35 @@ export const getAllByObj = (entity: keyof DbSchema, query: object) => {
     .get(entity)
     // @ts-ignore
     .filter(query)
-    .value();
-
+    .values();
+  console.log(result);
   return result;
 };
 
+// Events
+
+export const getAllEvents = () => db.get(EVENT_TABLE).value();
+
+export const getAllEventsByFilter = (query: Filter) => {
+  const filterObject: any = {};
+  if (query.browser) {
+    filterObject["browser"] = query.browser;
+  }
+  if (query.type) {
+    filterObject["name"] = query.type;
+  }
+  console.log(filterObject);
+  const results = getAllByObj(EVENT_TABLE, filterObject);
+  console.log(results);
+
+  return results;
+};
+export const getEventBy = (key: string, value: any) => {
+  console.table("here!");
+  return getBy(EVENT_TABLE, key, value);
+};
+
+export const getEventsBy = (key: string, value: any) => getAllBy(EVENT_TABLE, key, value);
 // Search
 export const cleanSearchQuery = (query: string) => query.replace(/[^a-zA-Z0-9]/g, "");
 
@@ -862,6 +892,5 @@ export const getTransactionsBy = (key: string, value: string) =>
 
 /* istanbul ignore next */
 export const getTransactionsByUserId = (userId: string) => getTransactionsBy("receiverId", userId);
-
 
 export default db;
