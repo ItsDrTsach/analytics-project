@@ -2,15 +2,15 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Debug CRA Tests",
+      "name": "Current TS File",
       "type": "node",
       "request": "launch",
-      "runtimeExecutable": "${workspaceRoot}/node_modules/.bin/react-scripts",
-      "args": ["test", "--runInBand", "--no-cache", "--env=jsdom"],
-      "cwd": "${workspaceRoot}",
+      "args": ["${relativeFile}"],
+      "runtimeArgs": ["--nolazy", "-r", "ts-node/register"],
+      "sourceMaps": true,
+      "cwd": "${workspaceRoot}/backend",
       "protocol": "inspector",
-      "console": "integratedTerminal",
-      "internalConsoleOptions": "neverOpen"
-    }
+  }
+    
   ]
 }

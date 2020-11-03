@@ -69,7 +69,7 @@ import {
   isCommentNotification,
 } from "../../client/src/utils/transactionUtils";
 import { DbSchema } from "../../client/src/models/db-schema";
-
+import moment from "moment";
 export type TDatabase = {
   users: User[];
   contacts: Contact[];
@@ -88,6 +88,7 @@ export interface Filter {
   search?: string;
   offset?: number;
 }
+import { OneDay, OneHour, OneWeek } from "./timeFrames";
 const USER_TABLE = "users";
 const CONTACT_TABLE = "contacts";
 const BANK_ACCOUNT_TABLE = "bankaccounts";
@@ -131,13 +132,12 @@ export const getAllBy = (entity: keyof DbSchema, key: string, value: any) => {
 };
 
 export const getBy = (entity: keyof DbSchema, key: string, value: any) => {
-  // @ts-ignore
   const result = db
     .get(entity)
     // @ts-ignore
-    .find({ key: value })
+    .find({ [`${key}`]: value })
     .value();
-  console.log("result", result);
+
   return result;
 };
 
@@ -170,8 +170,64 @@ export const getAllEventsByFilter = (query: Filter) => {
   return results;
 };
 export const getEventBy = (key: string, value: any) => {
-  console.table("here!");
   return getBy(EVENT_TABLE, key, value);
+};
+export const getEventsByHours = (offset: number) => {
+  let offsetInMilliseconds = offset * OneDay;
+  let currentStartDayInMilliseconds = moment().startOf("day").valueOf();
+  let currentEndDayInMilliseconds = moment().endOf("day").valueOf();
+  let startDate = currentStartDayInMilliseconds - offsetInMilliseconds;
+  let endDate = currentEndDayInMilliseconds - offsetInMilliseconds;
+  console.log(moment(startDate));
+  console.log(moment(endDate));
+  let filtered = db
+    .get(EVENT_TABLE)
+    .filter((event: Event) => {
+      return event.date > startDate && event.date < endDate;
+    })
+    .sort((event1: Event, event2: Event) => {
+      return event1.date - event2.date;
+    })
+    .groupBy((event: Event) => {
+      return moment(event.date).hour() > 9
+        ? `${moment(event.date).hour()}:00`
+        : `0${moment(event.date).hour()}:00`;
+    })
+    .value();
+
+  for (let key in filtered) {
+    filtered[key] = filtered[key].filter((value, i) => filtered[key].indexOf(value) === i);
+  }
+  interface HoursArray {
+    hour: string;
+    count: number;
+  }
+
+  let hoursArray: HoursArray[] = [];
+
+  for (let i = 0; i < 24; i++) {
+    if (i < 10) {
+      hoursArray.push({ hour: `0${i}:00`, count: 0 });
+    } else {
+      hoursArray.push({ hour: `${i}:00`, count: 0 });
+    }
+  }
+
+  for (let key in filtered) {
+    for (let i = 0; i < hoursArray.length; i++) {
+      if (key === hoursArray[i].hour) {
+        hoursArray[i] = { hour: key, count: filtered[key].length };
+      }
+    }
+  }
+
+  return hoursArray;
+};
+export const createEvent = (e: Event): Event => {
+  db.get(EVENT_TABLE).push(e).write();
+
+  // manual lookup after create
+  return getEventBy("_id", e._id);
 };
 
 export const getEventsBy = (key: string, value: any) => getAllBy(EVENT_TABLE, key, value);

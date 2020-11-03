@@ -1,0 +1,5 @@
+{
+    "watch": ["backend"],
+    "ext": "ts",
+    "exec": "npm run start:api:watch"
+  }

@@ -17,5 +17,8 @@
   "bugs": {
     "url": "https://github.com/suvelocity/analytics-challenge-boilerplate/issues"
   },
-  "homepage": "https://github.com/suvelocity/analytics-challenge-boilerplate#readme"
+  "homepage": "https://github.com/suvelocity/analytics-challenge-boilerplate#readme",
+  "devDependencies": {
+    "@types/date-fns": "^2.6.0"
+  }
 }
