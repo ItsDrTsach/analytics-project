@@ -9,7 +9,16 @@ export interface Event {
   browser: browser; // what browser the event came from
   geolocation: GeoLocation; // the geoLocation (lat,lng) of the event
 }
-
+export interface EventWithDateAndHour extends Event {
+  formatedDate: string;
+  formatedHour: string;
+}
+export interface TimeAndSessionCount {
+  date?: string;
+  hour?: string;
+  count: number;
+}
+export type groupedBytime = [string, [Array<EventWithDateAndHour>]];
 export interface weeklyRetentionObject {
   registrationWeek: number;
   newUsers: number;

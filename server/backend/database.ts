@@ -50,6 +50,10 @@ import {
   TransactionQueryPayload,
   DefaultPrivacyLevel,
   Event,
+  EventWithDateAndHour,
+  TimeAndSessionCount,
+  groupedBytime,
+  weeklyRetentionObject,
 } from "../../client/src/models";
 import Fuse from "fuse.js";
 import {
@@ -153,6 +157,22 @@ export const getAllByObj = (entity: keyof DbSchema, query: object) => {
 
 // Events
 
+export const sortEventsByDate = (events: Array<Event>, order: boolean): Array<Event> =>
+  events.sort((a, b) => {
+    const factor = order ? 1 : -1;
+    return (a.date - b.date) * factor;
+  });
+export const addDateAndHour = (events: Event[]): EventWithDateAndHour[] =>
+  events.map((e: Event) => {
+    const date = moment(e.date);
+    const newEvent: EventWithDateAndHour = {
+      ...e,
+      formatedDate: date.format("DD/MM/YYYY"),
+      formatedHour: date.format("hh") + ":" + date.format("mm"),
+    };
+    return newEvent;
+  });
+
 export const getAllEvents = () => db.get(EVENT_TABLE).value();
 
 export const getAllEventsByFilter = (query: Filter) => {
@@ -172,57 +192,7 @@ export const getAllEventsByFilter = (query: Filter) => {
 export const getEventBy = (key: string, value: any) => {
   return getBy(EVENT_TABLE, key, value);
 };
-export const getEventsByHours = (offset: number) => {
-  let offsetInMilliseconds = offset * OneDay;
-  let currentStartDayInMilliseconds = moment().startOf("day").valueOf();
-  let currentEndDayInMilliseconds = moment().endOf("day").valueOf();
-  let startDate = currentStartDayInMilliseconds - offsetInMilliseconds;
-  let endDate = currentEndDayInMilliseconds - offsetInMilliseconds;
-  console.log(moment(startDate));
-  console.log(moment(endDate));
-  let filtered = db
-    .get(EVENT_TABLE)
-    .filter((event: Event) => {
-      return event.date > startDate && event.date < endDate;
-    })
-    .sort((event1: Event, event2: Event) => {
-      return event1.date - event2.date;
-    })
-    .groupBy((event: Event) => {
-      return moment(event.date).hour() > 9
-        ? `${moment(event.date).hour()}:00`
-        : `0${moment(event.date).hour()}:00`;
-    })
-    .value();
 
-  for (let key in filtered) {
-    filtered[key] = filtered[key].filter((value, i) => filtered[key].indexOf(value) === i);
-  }
-  interface HoursArray {
-    hour: string;
-    count: number;
-  }
-
-  let hoursArray: HoursArray[] = [];
-
-  for (let i = 0; i < 24; i++) {
-    if (i < 10) {
-      hoursArray.push({ hour: `0${i}:00`, count: 0 });
-    } else {
-      hoursArray.push({ hour: `${i}:00`, count: 0 });
-    }
-  }
-
-  for (let key in filtered) {
-    for (let i = 0; i < hoursArray.length; i++) {
-      if (key === hoursArray[i].hour) {
-        hoursArray[i] = { hour: key, count: filtered[key].length };
-      }
-    }
-  }
-
-  return hoursArray;
-};
 export const createEvent = (e: Event): Event => {
   db.get(EVENT_TABLE).push(e).write();
 
@@ -231,6 +201,102 @@ export const createEvent = (e: Event): Event => {
 };
 
 export const getEventsBy = (key: string, value: any) => getAllBy(EVENT_TABLE, key, value);
+
+export const getEventsDistinctByDay = (
+  events: Event[],
+  value?: string
+): groupedBytime[] | groupedBytime => {
+  const temp = addDateAndHour(events).reduce((acc: any, current: EventWithDateAndHour) => {
+    const param = current.formatedDate;
+    // : current.formatedHour.slice(0, 3) + "00";
+    if (!acc[`${param}`]) {
+      acc[`${param}`] = [];
+    } else if (acc[`${param}`].some((e: Event) => e.session_id === current.session_id)) {
+      // if session already exists in that day, dont add him to that block;
+      return acc;
+    }
+    acc[`${param}`].push(current);
+    return acc;
+  }, {});
+  const distincted: groupedBytime[] = Object.entries(temp);
+  if (value) {
+    return distincted.filter((element: groupedBytime) => element[0] === value);
+  }
+  return distincted;
+};
+export const getEventsDistinctByHour = (events: EventWithDateAndHour[]): groupedBytime[] => {
+  const initial = {};
+  for (let i = 0; i < 24; i++) {
+    const hour = moment().startOf("day").add(i, "hours").format("HH");
+    // @ts-ignore
+    initial[`${hour}:00`] = [];
+  }
+  console.log(initial);
+  const temp = events.reduce((acc: any, current: EventWithDateAndHour) => {
+    const param = moment(current.date).format("HH");
+    if (acc[`${param}:00`].some((e: Event) => e.session_id === current.session_id)) {
+      // if session already exists in that hour, dont add him to that block;
+      return acc;
+    }
+    acc[`${param}:00`].push(current);
+    return acc;
+  }, initial);
+  const distincted: groupedBytime[] = Object.entries(temp);
+
+  return distincted;
+};
+
+export const reduceAndCountResults = (
+  formatedEvents: groupedBytime[],
+  key: "Day" | "Hour"
+): TimeAndSessionCount[] => {
+  const propName = key === "Day" ? "date" : "hour";
+  const results = formatedEvents.reduce(
+    (acc: TimeAndSessionCount[], current: groupedBytime, i: number) => {
+      if (i < 5) {
+        console.log(`entrie number ${i + 1}   ` + current);
+      }
+      const formatedReport: TimeAndSessionCount = {
+        [propName]: current[0],
+        count: current[1].length,
+      };
+      acc.push(formatedReport);
+      return acc;
+    },
+    []
+  );
+  return results;
+};
+
+export const getRetenstions = (date: number) => {
+  let results: any = {};
+  const allEvents = getAllEvents();
+  const dayZero = moment(date).startOf("day");
+  const today = moment().startOf("day");
+  const numberOfWeeks = today.diff(dayZero, "weeks");
+  for (let i: number = 0; i < numberOfWeeks; i++) {
+    const startOfTheWeek = moment(dayZero.valueOf()).add(i, "weeks");
+    const endOfTheWeek = moment(dayZero.valueOf()).add(i + 1, "weeks");
+    const newRetensionObject: weeklyRetentionObject = {
+      registrationWeek: i + 1,
+      newUsers: 0, // all signup events that happend in that week
+      weeklyRetention: [100], // [n] = (amount of logins in week n / newUsers) * 100
+      start: startOfTheWeek.format("DD/MM/YYYY"),
+      end: endOfTheWeek.format("DD/MM/YYYY"),
+    };
+
+    const signUpEvents = allEvents.filter((e) => e.name === "signup");
+    const inRange = signUpEvents.filter((e) =>
+      moment(e.date).isBetween(startOfTheWeek, endOfTheWeek)
+    );
+    newRetensionObject.newUsers = inRange.length;
+
+    results[`week${i}Retension`] = newRetensionObject;
+  }
+
+  return results;
+};
+
 // Search
 export const cleanSearchQuery = (query: string) => query.replace(/[^a-zA-Z0-9]/g, "");
 

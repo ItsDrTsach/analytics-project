@@ -1,28 +1,35 @@
 ///<reference path="types.ts" />
-
 import express from "express";
 import { Request, Response } from "express";
 // Types
-import { Filter } from "./database";
-import { format } from "date-fns";
+import {
+  addDateAndHour,
+  Filter,
+  getEventsDistinctByDay,
+  reduceAndCountResults,
+  getEventsDistinctByHour,
+  sortEventsByDate,
+  getRetenstions,
+} from "./database";
 // db utils
 import {
   getEventBy,
-  getEventsByHours,
   getEventsBy,
   getAllEvents,
   getAllEventsByFilter,
   createEvent,
 } from "./database";
-import { Event, weeklyRetentionObject } from "../../client/src/models/event";
+import {
+  Event,
+  EventWithDateAndHour,
+  groupedBytime,
+  weeklyRetentionObject,
+} from "../../client/src/models/event";
 
-import isWithinInterval from "date-fns/isWithinInterval";
 import Fuse from "fuse.js";
-import { findIndex, indexOf, result } from "lodash";
 const router = express.Router();
 import moment from "moment";
 import { OneWeek, OneDay, OneHour } from "./timeFrames";
-
 // Routes
 router.get("/all", (req: Request, res: Response) => {
   const allEvents = getAllEvents();
@@ -75,50 +82,32 @@ router.get("/all-filtered", (req: Request, res: Response) => {
 
 router.get("/by-days/:offset", (req: Request, res: Response) => {
   let offset = Number(req.params.offset);
-  offset = offset === 0 ? 7 : offset;
   // all events
-  let allEvents: Event[] = getAllEvents();
-  const endTime = moment().endOf("day");
-  // set number of days to go back
-  const startTime = moment().subtract(offset, "days").startOf("day");
-  // filter by time range
-  console.log(allEvents.length);
-  const eventsInRange = allEvents.filter((e: Event) => {
-    const isInRange = moment(e.date).isBetween(startTime, endTime);
-    return isInRange;
-  });
-  console.log("eventsInRange", eventsInRange.length);
-  // devide the array by days
-  const byDays = eventsInRange.reduce((acc: any, cur: Event) => {
-    const formatedDate = moment(cur.date).format("DD/MM/YYYY");
-    if (!acc[`${formatedDate}`]) {
-      acc[`${formatedDate}`] = [];
-    } else if (
-      acc[`${formatedDate}`].findIndex((el: Event) => el.session_id === cur.session_id) !== -1
-    ) {
-      console.log("duplicate");
-      return acc;
-    }
-    acc[`${formatedDate}`].push(cur);
-    return acc;
-  }, {});
-  const formatedResults = Object.entries(byDays).reduce((acc: any, cur: any) => {
-    const formatedDateReport = {
-      date: cur[0],
-      count: cur[1].length,
-    };
-    acc.push(formatedDateReport);
-    return acc;
-  }, []);
-  res.json(formatedResults);
+  const allEvents = getAllEvents();
+  // const sortedByDate = sortEventsByDate(allEvents, false);
+  const byDays = getEventsDistinctByDay(allEvents);
+  // @ts-ignore
+  const formatedResults = reduceAndCountResults(byDays, "Day");
+  const endIndex = formatedResults.length - offset;
+  const startIndex = endIndex - 7;
+  res.json(formatedResults.slice(startIndex, endIndex));
 });
 
 router.get("/by-hours/:offset", (req: Request, res: Response) => {
   let offset = Number(req.params.offset);
-  offset = offset === 0 ? 24 : offset;
-  const results = getEventsByHours(offset);
+  const dayToCheck: string = moment()
+    .subtract(offset || 0, "days")
+    .format("DD/MM/YYYY");
+  console.log(dayToCheck);
+  const allEvents = getAllEvents();
+  // const sortedByDate = sortEventsByDate(allEvents, false);
+  const eventsOfTheDay = getEventsDistinctByDay(allEvents, dayToCheck)[0][1];
+  // @ts-ignore
+  const byHours = getEventsDistinctByHour(eventsOfTheDay as EventWithDateAndHour[]);
+  console.log(byHours);
+  const formatedResults = reduceAndCountResults(byHours, "Hour");
 
-  res.json(results);
+  res.json(formatedResults);
 });
 
 router.get("/today", (req: Request, res: Response) => {
@@ -130,9 +119,11 @@ router.get("/week", (req: Request, res: Response) => {
 });
 
 router.get("/retention", (req: Request, res: Response) => {
-  const { dayZero } = req.query;
-  res.send("/hhhhhhhhhhhh");
+  const dayZero = Number(req.query.dayZero);
+  const result: weeklyRetentionObject[] = Object.values(getRetenstions(dayZero));
+  res.json(result);
 });
+
 router.get("/:eventId", (req: Request, res: Response) => {
   const eventId: string = req.params.eventId;
   if (!eventId) {
@@ -165,7 +156,8 @@ router.get("/chart/pageview/:time", (req: Request, res: Response) => {
 });
 
 router.get("/chart/timeonurl/:time", (req: Request, res: Response) => {
-  res.send("/chart/timeonurl/:time");
+  // res.json(getEventsDistinctBy("Hour"));
+  // res.send("/chart/timeonurl/:time");
 });
 
 router.get("/chart/geolocation/:time", (req: Request, res: Response) => {
