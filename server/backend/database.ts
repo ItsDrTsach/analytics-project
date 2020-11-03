@@ -268,32 +268,80 @@ export const reduceAndCountResults = (
   return results;
 };
 
+export const removeDuplicate = (events: Event[], attr: keyof Event): Event[] => {
+  return events.filter((e, position, self) => {
+    return self.findIndex((ev) => ev[attr] === e[attr]) === position;
+  });
+};
+
 export const getRetenstions = (date: number) => {
   let results: any = {};
   const allEvents = getAllEvents();
   const dayZero = moment(date).startOf("day");
   const today = moment().startOf("day");
-  const numberOfWeeks = today.diff(dayZero, "weeks");
+  const numberOfWeeks = today.diff(dayZero, "weeks") + 1;
+  const newUsersArray: number[] = [];
+  const users: Array<Array<string>> = [];
+
   for (let i: number = 0; i < numberOfWeeks; i++) {
     const startOfTheWeek = moment(dayZero.valueOf()).add(i, "weeks");
     const endOfTheWeek = moment(dayZero.valueOf()).add(i + 1, "weeks");
+
+    const weekUsers = users.slice();
+    // events of the week
+    const inRange = allEvents.filter((e) => moment(e.date).isBetween(startOfTheWeek, endOfTheWeek));
+
+    const signUpEvents = inRange.filter((e) => e.name === "signup");
+
+    const usersIds = signUpEvents.map((e) => e.distinct_user_id);
+    users.push(usersIds);
+    // new users of weel i
+    const newUsers = signUpEvents.length;
+    newUsersArray.push(newUsers);
+
     const newRetensionObject: weeklyRetentionObject = {
       registrationWeek: i + 1,
-      newUsers: 0, // all signup events that happend in that week
-      weeklyRetention: [100], // [n] = (amount of logins in week n / newUsers) * 100
+      newUsers, // all signup events that happend in that week
+      weeklyRetention: [], // [n] = (amount of logins in week n / newUsers) * 100
       start: startOfTheWeek.format("DD/MM/YYYY"),
       end: endOfTheWeek.format("DD/MM/YYYY"),
     };
 
-    const signUpEvents = allEvents.filter((e) => e.name === "signup");
-    const inRange = signUpEvents.filter((e) =>
-      moment(e.date).isBetween(startOfTheWeek, endOfTheWeek)
-    );
-    newRetensionObject.newUsers = inRange.length;
-
     results[`week${i}Retension`] = newRetensionObject;
-  }
 
+    // find all login events in that week
+    const loginEvents = removeDuplicate(
+      inRange.filter((e) => e.name === "login"),
+      "distinct_user_id"
+    );
+    // find which week they belong
+    const loginPerWeeks: number[] = Array(i + 1).fill(0);
+
+    loginEvents.forEach((e) => {
+      let indexInTheWeek;
+      const weekIndexToAddTo = weekUsers.findIndex((arr: string[]) => {
+        let index = arr.findIndex((userId: string) => userId === e.distinct_user_id);
+        if (index !== -1) {
+          indexInTheWeek = index;
+          return true;
+        }
+        return false;
+      });
+      if (weekIndexToAddTo !== -1) {
+        loginPerWeeks[weekIndexToAddTo]++;
+      }
+    });
+    // sum it up
+    loginPerWeeks.forEach((numberOfRetensions, index) => {
+      const initialUsers: number = results[`week${index}Retension`].newUsers;
+      const precent = Math.round((numberOfRetensions / initialUsers) * 100);
+      results[`week${index}Retension`]["weeklyRetention"].push(precent);
+    });
+  }
+  results = Object.values(results);
+  results.forEach((a: weeklyRetentionObject) => {
+    a.weeklyRetention[0] = 100;
+  });
   return results;
 };
 

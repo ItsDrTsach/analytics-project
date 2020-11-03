@@ -120,7 +120,7 @@ router.get("/week", (req: Request, res: Response) => {
 
 router.get("/retention", (req: Request, res: Response) => {
   const dayZero = Number(req.query.dayZero);
-  const result: weeklyRetentionObject[] = Object.values(getRetenstions(dayZero));
+  const result = getRetenstions(dayZero);
   res.json(result);
 });
 
